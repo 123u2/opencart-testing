@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+venv/
+.venv/
+
+# 测试报告
+reports/allure-results/
+reports/screenshots/*.png
+reports/*.html
+
+# 环境变量
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# 操作系统
+.DS_Store
+Thumbs.db

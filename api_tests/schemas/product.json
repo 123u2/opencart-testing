@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Product Response Schema",
+  "description": "OpenCart 商品列表/详情 API 响应结构校验",
+  "type": "object",
+  "required": ["products"],
+  "properties": {
+    "products": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["product_id", "name"],
+        "properties": {
+          "product_id": {"type": "string"},
+          "name": {"type": "string"},
+          "model": {"type": "string"},
+          "quantity": {"type": "string"},
+          "price": {"type": "string"},
+          "total": {"type": "string"},
+          "href": {"type": "string"},
+          "thumb": {"type": "string"}
+        }
+      }
+    },
+    "totals": {
+      "type": "array"
+    },
+    "vouchers": {
+      "type": "array"
+    },
+    "success": {
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,20 @@
+# === 接口自动化 ===
+requests>=2.31.0
+pytest>=8.0.0
+allure-pytest>=2.13.0
+jsonschema>=4.20.0
+
+# === Web UI 自动化 ===
+selenium>=4.16.0
+webdriver-manager>=4.0.0
+
+# === 性能测试 ===
+locust>=2.20.0
+
+# === 数据库操作 ===
+pymysql>=1.1.0
+
+# === 工具 ===
+python-dotenv>=1.0.0
+Faker>=22.0.0
+pyyaml>=6.0
