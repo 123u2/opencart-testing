@@ -7,7 +7,6 @@
 [![Locust](https://img.shields.io/badge/Locust-2.20+-red.svg)](https://locust.io)
 
 > 基于开源电商系统 OpenCart 的全方位自动化测试框架，覆盖**功能测试、接口自动化、Web UI 自动化、性能测试**四大领域。
-> 项目从零搭建，适合**中级软件测试工程师**求职展示。
 
 ---
 
