@@ -1,32 +1,34 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Cart Products Response Schema",
-  "description": "OpenCart API: api/cart/getProducts 响应结构校验（契约测试用）",
+  "title": "Cart Response Schema (OpenCart 4.x)",
+  "description": "OpenCart API: api/sale/cart 响应结构校验（契约测试用）",
   "type": "object",
-  "required": ["products"],
+  "required": ["products", "totals"],
   "properties": {
     "products": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["product_id", "name", "quantity", "price", "total"],
+        "required": ["cart_id", "product_id", "name", "quantity", "price", "total"],
         "properties": {
           "cart_id": {"type": ["string", "integer"]},
           "product_id": {"type": ["string", "integer"]},
           "name": {"type": "string"},
           "model": {"type": "string"},
           "option": {"type": "array"},
-          "recurring": {},
+          "subscription": {"type": "string"},
           "quantity": {"type": ["string", "integer"]},
           "stock": {"type": "boolean"},
-          "price": {"type": "string"},
-          "total": {"type": "string"},
+          "minimum": {},
           "reward": {},
-          "href": {"type": "string"},
-          "thumb": {"type": "string"}
+          "price": {"type": "string"},
+          "total": {"type": "string"}
         },
         "additionalProperties": true
       }
+    },
+    "vouchers": {
+      "type": "array"
     },
     "totals": {
       "type": "array",
@@ -35,15 +37,13 @@
         "required": ["title", "text"],
         "properties": {
           "title": {"type": "string"},
-          "text": {"type": "string"},
-          "code": {"type": "string"},
-          "value": {},
-          "sort_order": {}
-        }
+          "text": {"type": "string"}
+        },
+        "additionalProperties": true
       }
     },
-    "vouchers": {
-      "type": "array"
+    "shipping_required": {
+      "type": "boolean"
     },
     "success": {
       "type": "string"
