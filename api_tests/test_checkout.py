@@ -17,7 +17,7 @@ class TestCheckoutFlow:
     # ── 结账前置步骤 ──────────────────────────────────────
 
     def _setup_cart_and_shipping(self, api):
-        """封装前置操作：添加商品 + 设置配送地址/方式"""
+        """封装前置操作：添加商品 + 设置配送地址 + 选择配送方式"""
         # 添加商品
         with allure.step("1. 添加商品 product_id=42"):
             resp = api.post("api/cart/add", data={"product_id": 42, "quantity": 1})
@@ -27,43 +27,93 @@ class TestCheckoutFlow:
         with allure.step("2. 设置配送地址"):
             resp = api.post(
                 "api/shipping_address/save",
-                data={
-                    "shipping_address_id": 1,
-                },
+                data={"shipping_address_id": 1},
             )
-            # 200 或 302(redirect) 都是可接受的
             assert resp.status_code in [200, 302]
 
         # 获取可用配送方式并选择第一个
-        with allure.step("3. 选择配送方式"):
+        with allure.step("3. 获取可用配送方式"):
             methods_resp = api.get("api/shipping_method/getShippingMethods")
-            if methods_resp.status_code == 200:
-                methods = methods_resp.json()
+            assert methods_resp.status_code == 200, \
+                f"获取配送方式失败: {methods_resp.status_code}"
+            methods_data = methods_resp.json()
+            methods = methods_data.get("shipping_methods", {})
+
+            if isinstance(methods, dict):
+                # OpenCart 4.x 返回格式: {"flat": {"title":"Flat Rate","quote":{...}}}
+                first_key = next(iter(methods.keys()))
+                first_method = methods[first_key]
+                quote = first_method.get("quote", {})
+                if isinstance(quote, dict):
+                    quote_key = next(iter(quote.keys()))
+                    shipping_code = f"{first_key}.{quote_key}"
+                else:
+                    shipping_code = first_key
+            elif isinstance(methods, list) and len(methods) > 0:
+                # 兼容旧格式: [{"code":"flat.flat","title":"Flat Rate"}]
+                shipping_code = methods[0].get("code", "flat.flat")
+            else:
+                shipping_code = "flat.flat"
+
+            allure.attach(shipping_code, "选择的配送方式", allure.attachment_type.TEXT)
+
+        with allure.step("4. 设置配送方式"):
+            save_resp = api.post(
+                "api/shipping_method/save",
+                data={"shipping_method": shipping_code},
+            )
+            assert save_resp.status_code in [200, 302], \
+                f"设置配送方式失败: {save_resp.status_code} — {save_resp.text}"
 
     def _setup_payment(self, api):
-        """封装：设置支付地址 + 支付方式"""
-        with allure.step("4. 设置支付地址"):
+        """封装：设置支付地址 + 获取并选择支付方式"""
+        with allure.step("5. 设置支付地址"):
             resp = api.post(
                 "api/payment_address/save",
-                data={
-                    "payment_address_id": 1,
-                },
+                data={"payment_address_id": 1},
             )
+            assert resp.status_code in [200, 302]
+
+        # 获取可用支付方式并选择第一个
+        with allure.step("6. 获取可用支付方式"):
+            methods_resp = api.get("api/payment_method/getPaymentMethods")
+            assert methods_resp.status_code == 200, \
+                f"获取支付方式失败: {methods_resp.status_code}"
+            methods_data = methods_resp.json()
+            methods = methods_data.get("payment_methods", {})
+
+            if isinstance(methods, dict):
+                first_key = next(iter(methods.keys()))
+                payment_code = methods[first_key].get("code", first_key)
+            elif isinstance(methods, list) and len(methods) > 0:
+                payment_code = methods[0].get("code", "cod")
+            else:
+                payment_code = "cod"
+
+            allure.attach(payment_code, "选择的支付方式", allure.attachment_type.TEXT)
+
+        with allure.step("7. 设置支付方式"):
+            save_resp = api.post(
+                "api/payment_method/save",
+                data={"payment_method": payment_code},
+            )
+            assert save_resp.status_code in [200, 302], \
+                f"设置支付方式失败: {save_resp.status_code} — {save_resp.text}"
 
     # ── 结账完整流程 ──────────────────────────────────────
 
     @allure.story("完整结账 — 货到付款")
-    @allure.title("从添加商品到确认订单的完整流程")
+    @allure.title("从添加商品到确认订单的完整流程（含 DB 断言）")
     def test_complete_checkout_cod(self, api, db):
         """场景法-正常流：完整购物 → 货到付款下单 并验证数据库"""
-        # Step 1-3: 前置操作
+        # Step 1-4: 前置操作（添加商品→配送地址→配送方式）
         self._setup_cart_and_shipping(api)
 
-        # Step 4: 支付地址 + 方式
+        # Step 5-7: 支付设置（支付地址→支付方式）
         self._setup_payment(api)
 
-        # Step 5: 确认订单
-        with allure.step("5. 确认订单"):
+        # Step 8: 确认订单
+        with allure.step("8. 确认订单"):
             confirm_resp = api.post("api/order/confirm")
             allure.attach(
                 str(confirm_resp.text),
@@ -71,13 +121,13 @@ class TestCheckoutFlow:
                 attachment_type=allure.attachment_type.TEXT,
             )
 
-        # Step 6: 断言 — 验证 API 返回成功
-        with allure.step("6. 验证订单创建成功"):
+        # Step 9: 断言 — 验证 API 返回成功
+        with allure.step("9. 验证订单创建成功"):
             assert confirm_resp.status_code in [200, 302], \
                 f"确认订单失败: {confirm_resp.status_code} — {confirm_resp.text}"
 
-        # Step 7: 数据库断言 — 验证订单真实入库
-        with allure.step("7. 数据库验证 — 订单已写入 oc_order 表"):
+        # Step 10: 数据库断言 — 验证订单真实入库
+        with allure.step("10. 数据库验证 — 订单已写入 oc_order 表"):
             last_order = db.get_last_order()
             assert last_order is not None, \
                 "数据库 oc_order 表应存在新创建的订单"

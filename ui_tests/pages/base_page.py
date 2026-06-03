@@ -133,6 +133,18 @@ class BasePage:
             pass
         return self
 
+    # ── JavaScript 操作 ────────────────────────────────────
+
+    def execute_js(self, script: str, *args):
+        """执行 JavaScript 脚本"""
+        return self.driver.execute_script(script, *args)
+
+    def scroll_to(self, locator: tuple):
+        """滚动页面使元素可见"""
+        element = self.find(locator)
+        self.driver.execute_script("arguments[0].scrollIntoView({behavior:'smooth',block:'center'});", element)
+        return self
+
     # ── 等待条件 ──────────────────────────────────────────
 
     def wait_for_url_contains(self, text: str, timeout: int = 10):

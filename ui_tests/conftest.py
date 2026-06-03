@@ -46,6 +46,12 @@ def base_url(request):
     return url or Config.BASE_URL
 
 
+@pytest.fixture(scope="session")
+def config():
+    """全局配置"""
+    return Config
+
+
 @pytest.fixture
 def driver(request):
     """WebDriver 实例（每个用例独立的浏览器）

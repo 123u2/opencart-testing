@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Product Response Schema",
-  "description": "OpenCart 商品列表/详情 API 响应结构校验",
+  "title": "Cart Products Response Schema",
+  "description": "OpenCart API: api/cart/getProducts 响应结构校验（契约测试用）",
   "type": "object",
   "required": ["products"],
   "properties": {
@@ -9,27 +9,48 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["product_id", "name"],
+        "required": ["product_id", "name", "quantity", "price", "total"],
         "properties": {
-          "product_id": {"type": "string"},
+          "cart_id": {"type": ["string", "integer"]},
+          "product_id": {"type": ["string", "integer"]},
           "name": {"type": "string"},
           "model": {"type": "string"},
-          "quantity": {"type": "string"},
+          "option": {"type": "array"},
+          "recurring": {},
+          "quantity": {"type": ["string", "integer"]},
+          "stock": {"type": "boolean"},
           "price": {"type": "string"},
           "total": {"type": "string"},
+          "reward": {},
           "href": {"type": "string"},
           "thumb": {"type": "string"}
-        }
+        },
+        "additionalProperties": true
       }
     },
     "totals": {
-      "type": "array"
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["title", "text"],
+        "properties": {
+          "title": {"type": "string"},
+          "text": {"type": "string"},
+          "code": {"type": "string"},
+          "value": {},
+          "sort_order": {}
+        }
+      }
     },
     "vouchers": {
       "type": "array"
     },
     "success": {
       "type": "string"
+    },
+    "error": {
+      "type": "string"
     }
-  }
+  },
+  "additionalProperties": true
 }

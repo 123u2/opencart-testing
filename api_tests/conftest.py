@@ -55,6 +55,17 @@ def db(config):
     helper.close()
 
 
+@pytest.fixture(scope="session")
+def unauth_api(config):
+    """未登录的 API 客户端（session 级别）
+
+    用于测试登录、登出等不需要预先认证的场景。
+    """
+    client = OpenCartAPI(base_url=config.BASE_URL, timeout=config.API_TIMEOUT)
+    yield client
+    client.close()
+
+
 @pytest.fixture
 def fresh_cart(api):
     """每次用例执行前后清空购物车，确保测试隔离"""

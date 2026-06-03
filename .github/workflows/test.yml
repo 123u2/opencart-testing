@@ -1,5 +1,5 @@
 # OpenCart 电商系统自动化测试 CI 流水线
-# 面试可讲：代码推送自动触发 API 测试 + UI 测试，生成 Allure 报告
+#代码推送自动触发 API 测试 + UI 测试，生成 Allure 报告
 name: OpenCart E-commerce Testing CI
 
 on:
@@ -88,7 +88,34 @@ jobs:
   ui-tests:
     runs-on: ubuntu-latest
     name: UI Tests
-    needs: api-tests  # 等 API 测试通过后再跑（节省并发资源）
+    needs: api-tests  # 等 API 测试通过后再跑
+
+    services:
+      opencart:
+        image: bitnami/opencart:latest
+        ports:
+          - 8080:8080
+        env:
+          OPENCART_HOST: localhost
+          OPENCART_DATABASE_HOST: mariadb
+          OPENCART_DATABASE_NAME: bitnami_opencart
+          OPENCART_DATABASE_USER: bn_opencart
+          OPENCART_DATABASE_PASSWORD: bitnami
+        options: >-
+          --health-cmd "curl -f http://localhost:8080 || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 10
+
+      mariadb:
+        image: mariadb:10.11
+        ports:
+          - 3306:3306
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: bitnami_opencart
+          MARIADB_USER: bn_opencart
+          MARIADB_PASSWORD: bitnami
 
     steps:
       - name: Checkout Code
@@ -102,6 +129,18 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install -r requirements.txt
+
+      - name: Wait for OpenCart
+        run: |
+          echo "等待 OpenCart 启动..."
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 | grep -q "200\|302"; then
+              echo "OpenCart 已就绪!"
+              break
+            fi
+            echo "等待中... ($i/30)"
+            sleep 10
+          done
 
       - name: Run UI Smoke Tests (Headless Chrome)
         env:
@@ -119,4 +158,4 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install ruff
-      - run: ruff check . --ignore=E501,F841 || true
+      - run: ruff check . --ignore=E501,F841
