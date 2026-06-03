@@ -1,5 +1,11 @@
-# OpenCart 电商系统自动化测试 CI 流水线
-#代码推送自动触发 API 测试 + UI 测试，生成 Allure 报告
+# OpenCart 4.x 电商系统自动化测试 CI 流水线
+# 推送触发：API 测试 + UI 测试，生成 Allure 报告
+#
+# 架构说明：
+#   - OpenCart 4.x 通过 bitnami/opencart Docker 镜像启动，不需要源码在仓库中
+#   - MariaDB 作为独立 service 容器，暴露 3306 供测试代码做 DB 断言
+#   - API 认证使用 OpenCart 4.x 的 API Key 机制（username + key → api_token → OCSESSID cookie）
+
 name: OpenCart E-commerce Testing CI
 
 on:
@@ -7,7 +13,6 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
-  # 允许手动触发
   workflow_dispatch:
 
 jobs:
@@ -17,9 +22,8 @@ jobs:
     name: API Tests
 
     services:
-      # 启动 OpenCart + MariaDB 服务容器
       opencart:
-        image: bitnami/opencart:latest
+        image: bitnami/opencart:4
         ports:
           - 8080:8080
         env:
@@ -54,8 +58,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Wait for OpenCart
         run: |
@@ -69,13 +72,85 @@ jobs:
             sleep 10
           done
 
+      - name: Setup OpenCart API & Test Data
+        run: |
+          set -e
+          sudo apt-get update -qq && sudo apt-get install -y -qq mysql-client
+
+          # ═══ 1. 探测 Docker 网桥网关 IP ═══
+          # 测试代码从宿主机访问 OpenCart 容器（通过端口映射 localhost:8080）
+          # OpenCart 端看到的 REMOTE_ADDR 是 Docker 网桥网关 IP
+          GATEWAY=$(ip -4 addr show docker0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "172.17.0.1")
+          echo "Docker 网关 IP: $GATEWAY"
+          echo "GATEWAY_IP=$GATEWAY" >> $GITHUB_ENV
+
+          # ═══ 2. 创建 API 用户 ═══
+          # OpenCart 4.x 使用 API Key 认证：username + key → api_token
+          mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart <<SQL
+            INSERT INTO oc_api (username, \`key\`, status, date_added, date_modified)
+            VALUES ('ci-test', 'ci-api-key-0123456789abcdef', 1, NOW(), NOW());
+          SQL
+          echo "API 用户 ci-test 已创建"
+
+          # ═══ 3. 添加 API IP 白名单 ═══
+          API_ID=$(mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart -N \
+            -e "SELECT api_id FROM oc_api WHERE username='ci-test' LIMIT 1")
+          echo "API ID: $API_ID"
+
+          # 添加多个可能的 Docker 网关 IP，覆盖不同 CI 环境
+          mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart <<SQL
+            INSERT INTO oc_api_ip (api_id, ip) VALUES ($API_ID, '$GATEWAY');
+            INSERT INTO oc_api_ip (api_id, ip) VALUES ($API_ID, '172.17.0.1');
+            INSERT INTO oc_api_ip (api_id, ip) VALUES ($API_ID, '172.18.0.1');
+          SQL
+          echo "API IP 白名单已配置"
+
+          # ═══ 4. 查找合适的测试商品 ═══
+          # 排除有必填选项的商品（加入购物车会失败）
+          PRODUCT_IDS=$(mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart -N -e "
+            SELECT p.product_id FROM oc_product p
+            LEFT JOIN oc_product_option po ON p.product_id = po.product_id
+            WHERE po.product_id IS NULL AND p.status = 1 AND p.quantity > 0
+            ORDER BY p.product_id
+            LIMIT 2
+          ")
+          PID1=$(echo "$PRODUCT_IDS" | sed -n '1p' | tr -d ' ')
+          PID2=$(echo "$PRODUCT_IDS" | sed -n '2p' | tr -d ' ')
+
+          if [ -z "$PID1" ]; then
+            # 降级：取任意有库存的商品
+            PID1=$(mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart -N \
+              -e "SELECT product_id FROM oc_product WHERE status=1 AND quantity>0 ORDER BY product_id LIMIT 1")
+            PID2=$PID1
+          fi
+
+          echo "DEFAULT_PRODUCT_ID=$PID1" >> $GITHUB_ENV
+          echo "DEFAULT_SECOND_PRODUCT_ID=${PID2:-$PID1}" >> $GITHUB_ENV
+          echo "测试商品: product_1=$PID1, product_2=${PID2:-$PID1}"
+
+          # ═══ 5. 验证 API 登录可用 ═══
+          echo "验证 API 认证..."
+          RESP=$(curl -s -X POST "http://localhost:8080/index.php?route=api/account/login" \
+            -d "username=ci-test&key=ci-api-key-0123456789abcdef")
+          echo "登录响应: $RESP"
+          if echo "$RESP" | grep -q "api_token"; then
+            echo "✓ API 认证正常"
+          else
+            echo "✗ API 认证失败 — 检查 IP 白名单和用户配置"
+          fi
+
       - name: Run API Tests
         env:
           OPENCART_BASE_URL: http://localhost:8080
+          API_USERNAME: ci-test
+          API_KEY: ci-api-key-0123456789abcdef
           DB_HOST: localhost
           DB_PORT: 3306
+          DB_USER: root
+          DB_PASSWORD: root
+          DB_NAME: bitnami_opencart
         run: |
-          pytest api_tests/ -v --alluredir=reports/allure-results || true
+          pytest api_tests/ -v --tb=short --alluredir=reports/allure-results || true
 
       - name: Upload Allure Results
         if: always()
@@ -88,11 +163,11 @@ jobs:
   ui-tests:
     runs-on: ubuntu-latest
     name: UI Tests
-    needs: api-tests  # 等 API 测试通过后再跑
+    needs: api-tests
 
     services:
       opencart:
-        image: bitnami/opencart:latest
+        image: bitnami/opencart:4
         ports:
           - 8080:8080
         env:
@@ -127,8 +202,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install Dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Wait for OpenCart
         run: |

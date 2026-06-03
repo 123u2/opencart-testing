@@ -62,14 +62,15 @@ class TestCart:
             "product_id": config.DEFAULT_PRODUCT_ID, "quantity": 1
         })
         api.post("api/sale/cart|add", data={
-            "product_id": 29, "quantity": 1
+            "product_id": config.DEFAULT_SECOND_PRODUCT_ID, "quantity": 1
         })
 
         products = api.get("api/sale/cart").json()["products"]
         product_ids = [str(p["product_id"]) for p in products]
         assert str(config.DEFAULT_PRODUCT_ID) in product_ids, \
             f"应包含 product_id={config.DEFAULT_PRODUCT_ID}: {product_ids}"
-        assert "29" in product_ids, f"应包含 product_id=29: {product_ids}"
+        assert str(config.DEFAULT_SECOND_PRODUCT_ID) in product_ids, \
+            f"应包含 product_id={config.DEFAULT_SECOND_PRODUCT_ID}: {product_ids}"
         assert len(products) == 2, f"应有 2 件商品: {len(products)}"
 
     # ── 修改数量 ──────────────────────────────────────────
@@ -137,9 +138,8 @@ class TestCart:
             "product_id": config.DEFAULT_PRODUCT_ID, "quantity": 1
         })
         api.post("api/sale/cart|add", data={
-            "product_id": 29, "quantity": 1
+            "product_id": config.DEFAULT_SECOND_PRODUCT_ID, "quantity": 1
         })
-
         # 获取所有商品
         products = api.get("api/sale/cart").json()["products"]
         assert len(products) == 2, f"移除前应有 2 件商品: {len(products)}"
@@ -168,9 +168,8 @@ class TestCart:
             "product_id": config.DEFAULT_PRODUCT_ID, "quantity": 2
         })
         api.post("api/sale/cart|add", data={
-            "product_id": 29, "quantity": 1
+            "product_id": config.DEFAULT_SECOND_PRODUCT_ID, "quantity": 1
         })
-
         # 逐个移除所有商品
         products = api.get("api/sale/cart").json()["products"]
         for p in products:

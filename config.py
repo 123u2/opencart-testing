@@ -33,6 +33,8 @@ class Config:
 
     # 默认测试商品 — product_id=28 无必填选项，库存充足
     DEFAULT_PRODUCT_ID = int(os.getenv("DEFAULT_PRODUCT_ID", "28"))
+    # 第二件测试商品 — 用于"添加多件不同商品"类测试
+    DEFAULT_SECOND_PRODUCT_ID = int(os.getenv("DEFAULT_SECOND_PRODUCT_ID", "29"))
 
     # 后台管理账号
     ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
