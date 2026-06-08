@@ -71,6 +71,57 @@ jobs:
           mkdir -p opencart/storage/marketplace
           mkdir -p opencart/storage/backup
 
+          # 替换 vendor.php：CI 不需要 AWS/Twig 等第三方库，跳过缺失文件避免 fatal error
+          cat > opencart/system/vendor.php << 'PHPEOF'
+          <?php
+          // CI stub: 仅注册存在的 vendor 路径，缺失的静默跳过
+          $vendorBase = DIR_STORAGE . 'vendor/';
+
+          $registrations = [
+              ['AWS/CRT',           'aws/aws-crt-php/src/AWS/CRT/'],
+              ['AWS/CRT/Auth',      'aws/aws-crt-php/src/AWS/CRT/Auth/'],
+              ['AWS/CRT/HTTP',      'aws/aws-crt-php/src/AWS/CRT/HTTP/'],
+              ['AWS/CRT/IO',        'aws/aws-crt-php/src/AWS/CRT/IO/'],
+              ['AWS/CRT/Internal',  'aws/aws-crt-php/src/AWS/CRT/Internal/'],
+              ['Aws',               'aws/aws-sdk-php/src/'],
+              ['GuzzleHttp',        'guzzlehttp/guzzle/src/'],
+              ['GuzzleHttp\Promise','guzzlehttp/promises/src/'],
+              ['GuzzleHttp\Psr7',   'guzzlehttp/psr7/src/'],
+              ['JmesPath',          'mtdowling/jmespath.php/src/'],
+              ['Psr\Http\Client',   'psr/http-client/src/'],
+              ['Psr\Http\Message',  'psr/http-factory/src/'],
+              ['Psr\Http\Message',  'psr/http-message/src/'],
+              ['Psr\Log',           'psr/log/src/'],
+              ['ScssPhp\ScssPhp',   'scssphp/scssphp/src/'],
+              ['Symfony\Polyfill\Ctype',    'symfony/polyfill-ctype/'],
+              ['Symfony\Polyfill\Mbstring', 'symfony/polyfill-mbstring/'],
+              ['Twig',              'twig/twig/src/'],
+          ];
+          foreach ($registrations as [$ns, $relPath]) {
+              if (is_dir($vendorBase . $relPath)) {
+                  $autoloader->register($ns, $vendorBase . $relPath, true);
+              }
+          }
+
+          // 安全加载 functions/boostrap 文件（缺失则跳过）
+          $optionalFiles = [
+              'aws/aws-sdk-php/src/functions.php',
+              'guzzlehttp/guzzle/src/functions_include.php',
+              'guzzlehttp/promises/src/functions_include.php',
+              'mtdowling/jmespath.php/src/JmesPath.php',
+              'ralouphie/getallheaders/src/getallheaders.php',
+              'symfony/deprecation-contracts/function.php',
+              'symfony/polyfill-ctype/bootstrap.php',
+              'symfony/polyfill-mbstring/bootstrap.php',
+          ];
+          foreach ($optionalFiles as $relPath) {
+              $path = $vendorBase . $relPath;
+              if (is_file($path)) {
+                  require_once $path;
+              }
+          }
+          PHPEOF
+
           echo "OpenCart 已部署到 $(pwd)/opencart"
 
       # ═══ 等待 MariaDB 就绪 ═══
@@ -316,6 +367,53 @@ jobs:
           mv "opencart-${OC_VERSION}/upload" opencart
           rm -rf "opencart-${OC_VERSION}"
           mkdir -p opencart/storage/{cache,download,logs,session,upload,marketplace,backup}
+
+          # CI stub: 安全跳过缺失的 vendor 文件
+          cat > opencart/system/vendor.php << 'PHPEOF'
+          <?php
+          $vendorBase = DIR_STORAGE . 'vendor/';
+          $registrations = [
+              ['AWS/CRT',           'aws/aws-crt-php/src/AWS/CRT/'],
+              ['AWS/CRT/Auth',      'aws/aws-crt-php/src/AWS/CRT/Auth/'],
+              ['AWS/CRT/HTTP',      'aws/aws-crt-php/src/AWS/CRT/HTTP/'],
+              ['AWS/CRT/IO',        'aws/aws-crt-php/src/AWS/CRT/IO/'],
+              ['AWS/CRT/Internal',  'aws/aws-crt-php/src/AWS/CRT/Internal/'],
+              ['Aws',               'aws/aws-sdk-php/src/'],
+              ['GuzzleHttp',        'guzzlehttp/guzzle/src/'],
+              ['GuzzleHttp\Promise','guzzlehttp/promises/src/'],
+              ['GuzzleHttp\Psr7',   'guzzlehttp/psr7/src/'],
+              ['JmesPath',          'mtdowling/jmespath.php/src/'],
+              ['Psr\Http\Client',   'psr/http-client/src/'],
+              ['Psr\Http\Message',  'psr/http-factory/src/'],
+              ['Psr\Http\Message',  'psr/http-message/src/'],
+              ['Psr\Log',           'psr/log/src/'],
+              ['ScssPhp\ScssPhp',   'scssphp/scssphp/src/'],
+              ['Symfony\Polyfill\Ctype',    'symfony/polyfill-ctype/'],
+              ['Symfony\Polyfill\Mbstring', 'symfony/polyfill-mbstring/'],
+              ['Twig',              'twig/twig/src/'],
+          ];
+          foreach ($registrations as [$ns, $relPath]) {
+              if (is_dir($vendorBase . $relPath)) {
+                  $autoloader->register($ns, $vendorBase . $relPath, true);
+              }
+          }
+          $optionalFiles = [
+              'aws/aws-sdk-php/src/functions.php',
+              'guzzlehttp/guzzle/src/functions_include.php',
+              'guzzlehttp/promises/src/functions_include.php',
+              'mtdowling/jmespath.php/src/JmesPath.php',
+              'ralouphie/getallheaders/src/getallheaders.php',
+              'symfony/deprecation-contracts/function.php',
+              'symfony/polyfill-ctype/bootstrap.php',
+              'symfony/polyfill-mbstring/bootstrap.php',
+          ];
+          foreach ($optionalFiles as $relPath) {
+              $path = $vendorBase . $relPath;
+              if (is_file($path)) {
+                  require_once $path;
+              }
+          }
+          PHPEOF
 
       - name: Install OpenCart Database
         env:
