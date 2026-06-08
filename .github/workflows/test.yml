@@ -2,9 +2,10 @@
 # 推送触发：API 测试 + UI 测试，生成 Allure 报告
 #
 # 架构说明：
-#   - OpenCart 4.x 通过 bitnami/opencart Docker 镜像启动，不需要源码在仓库中
-#   - MariaDB 作为独立 service 容器，暴露 3306 供测试代码做 DB 断言
-#   - API 认证使用 OpenCart 4.x 的 API Key 机制（username + key → api_token → OCSESSID cookie）
+#   - OpenCart 4.x 通过 PHP 内置服务器直接运行（不需要 Docker 镜像）
+#   - MariaDB 作为 service 容器，暴露 3306 供测试代码做 DB 断言
+#   - ci/setup-db.php 自动创建数据库表 + 导入种子数据
+#   - API 认证使用 OpenCart 4.x 的 API Key 机制
 
 name: OpenCart E-commerce Testing CI
 
@@ -22,31 +23,13 @@ jobs:
     name: API Tests
 
     services:
-      opencart:
-        image: bitnami/opencart:4
-        ports:
-          - 8080:8080
-        env:
-          OPENCART_HOST: localhost
-          OPENCART_DATABASE_HOST: mariadb
-          OPENCART_DATABASE_NAME: bitnami_opencart
-          OPENCART_DATABASE_USER: bn_opencart
-          OPENCART_DATABASE_PASSWORD: bitnami
-        options: >-
-          --health-cmd "curl -f http://localhost:8080 || exit 1"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 10
-
       mariadb:
         image: mariadb:10.11
         ports:
           - 3306:3306
         env:
           MARIADB_ROOT_PASSWORD: root
-          MARIADB_DATABASE: bitnami_opencart
-          MARIADB_USER: bn_opencart
-          MARIADB_PASSWORD: bitnami
+          MARIADB_DATABASE: opencart
 
     steps:
       - name: Checkout Code
@@ -57,69 +40,157 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
+      - name: Install Python Dependencies
         run: pip install -r requirements.txt
 
-      - name: Wait for OpenCart
+      # ═══ 安装 PHP + 扩展 ═══
+      - name: Install PHP
         run: |
-          echo "等待 OpenCart 启动..."
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq php-cli php-mysql php-gd php-curl php-zip php-mbstring php-xml php-intl mysql-client
+
+      # ═══ 下载并部署 OpenCart 4.x ═══
+      - name: Deploy OpenCart
+        run: |
+          set -e
+
+          # 下载 OpenCart 4.x 源码（GitHub 归档，含 install/ 目录）
+          OC_VERSION="4.0.2.3"
+          echo "下载 OpenCart ${OC_VERSION}..."
+          curl -sSL "https://github.com/opencart/opencart/archive/refs/tags/${OC_VERSION}.tar.gz" \
+            | tar xz
+          mv "opencart-${OC_VERSION}/upload" opencart
+          rm -rf "opencart-${OC_VERSION}"
+
+          # 创建 storage 子目录
+          mkdir -p opencart/storage/cache
+          mkdir -p opencart/storage/download
+          mkdir -p opencart/storage/logs
+          mkdir -p opencart/storage/session
+          mkdir -p opencart/storage/upload
+          mkdir -p opencart/storage/marketplace
+          mkdir -p opencart/storage/backup
+
+          echo "OpenCart 已部署到 $(pwd)/opencart"
+
+      # ═══ 等待 MariaDB 就绪 ═══
+      - name: Wait for MariaDB
+        run: |
+          echo "等待 MariaDB..."
           for i in $(seq 1 30); do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 | grep -q "200\|302"; then
-              echo "OpenCart 已就绪!"
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -u root --password=root --silent 2>/dev/null; then
+              echo "MariaDB 已就绪!"
               break
             fi
             echo "等待中... ($i/30)"
-            sleep 10
+            sleep 2
           done
 
-      - name: Setup OpenCart API & Test Data
+      # ═══ 自动安装数据库（ci/setup-db.php） ═══
+      - name: Install OpenCart Database
+        env:
+          DB_HOSTNAME: 127.0.0.1
+          DB_USERNAME: root
+          DB_PASSWORD: root
+          DB_DATABASE: opencart
+          DB_PORT: '3306'
+          DB_PREFIX: oc_
+          ADMIN_USERNAME: admin
+          ADMIN_PASSWORD: admin123
+          ADMIN_EMAIL: admin@example.com
         run: |
           set -e
-          sudo apt-get update -qq && sudo apt-get install -y -qq mysql-client
+          # 确保数据库存在
+          mysql -h 127.0.0.1 -P 3306 -u root -proot -e "CREATE DATABASE IF NOT EXISTS opencart CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci"
+          # 运行安装脚本
+          php ci/setup-db.php opencart
 
-          # ═══ 1. 探测 Docker 网桥网关 IP ═══
-          # 测试代码从宿主机访问 OpenCart 容器（通过端口映射 localhost:8080）
-          # OpenCart 端看到的 REMOTE_ADDR 是 Docker 网桥网关 IP
-          GATEWAY=$(ip -4 addr show docker0 2>/dev/null | grep -oP '(?<=inet\s)\d+(\.\d+){3}' || echo "172.17.0.1")
-          echo "Docker 网关 IP: $GATEWAY"
-          echo "GATEWAY_IP=$GATEWAY" >> $GITHUB_ENV
+      # ═══ 写入 config.php（运行时配置） ═══
+      - name: Write OpenCart Config
+        run: |
+          cat > opencart/config.php << 'PHPEOF'
+          <?php
+          // APPLICATION
+          define('APPLICATION', 'Catalog');
 
-          # ═══ 2. 创建 API 用户 ═══
-          # OpenCart 4.x 使用 API Key 认证：username + key → api_token
-          mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart <<SQL
+          // HTTP
+          define('HTTP_SERVER', 'http://localhost:8080/');
+
+          // DIR
+          define('DIR_OPENCART', __DIR__ . '/');
+          define('DIR_APPLICATION', DIR_OPENCART . 'catalog/');
+          define('DIR_EXTENSION',  DIR_OPENCART . 'extension/');
+          define('DIR_IMAGE',      DIR_OPENCART . 'image/');
+          define('DIR_SYSTEM',     DIR_OPENCART . 'system/');
+          define('DIR_STORAGE',    DIR_OPENCART . 'storage/');
+          define('DIR_LANGUAGE',   DIR_APPLICATION . 'language/');
+          define('DIR_TEMPLATE',   DIR_APPLICATION . 'view/template/');
+          define('DIR_CONFIG',     DIR_SYSTEM . 'config/');
+          define('DIR_CACHE',      DIR_STORAGE . 'cache/');
+          define('DIR_DOWNLOAD',   DIR_STORAGE . 'download/');
+          define('DIR_LOGS',       DIR_STORAGE . 'logs/');
+          define('DIR_SESSION',    DIR_STORAGE . 'session/');
+          define('DIR_UPLOAD',     DIR_STORAGE . 'upload/');
+
+          // DB
+          define('DB_DRIVER',   'mysqli');
+          define('DB_HOSTNAME', '127.0.0.1');
+          define('DB_PORT',     '3306');
+          define('DB_USERNAME', 'root');
+          define('DB_PASSWORD', 'root');
+          define('DB_DATABASE', 'opencart');
+          define('DB_PREFIX',   'oc_');
+
+          // OpenCart
+          define('OPENCART_SERVER', 'http://localhost:8080/');
+          PHPEOF
+
+          # Admin config（结构同上，仅 APPLICATION 不同）
+          cp opencart/config.php opencart/admin/config.php
+          sed -i "s/define('APPLICATION', 'Catalog')/define('APPLICATION', 'Admin')/" opencart/admin/config.php
+
+          echo "config.php 已写入"
+
+      # ═══ 配置 API 用户 + 测试数据 ═══
+      - name: Setup API Test User
+        env:
+          API_USERNAME: ci-test
+          API_KEY: ci-api-key-0123456789abcdef
+        run: |
+          set -e
+
+          # 创建 API 用户（如果 setup-db.php 已经创建了 Default，则新增第二个）
+          mysql -h 127.0.0.1 -P 3306 -u root -proot opencart <<SQL
             INSERT INTO oc_api (username, \`key\`, status, date_added, date_modified)
-            VALUES ('ci-test', 'ci-api-key-0123456789abcdef', 1, NOW(), NOW());
+            VALUES ('ci-test', 'ci-api-key-0123456789abcdef', 1, NOW(), NOW())
+            ON DUPLICATE KEY UPDATE \`key\`='ci-api-key-0123456789abcdef', status=1;
           SQL
           echo "API 用户 ci-test 已创建"
 
-          # ═══ 3. 添加 API IP 白名单 ═══
-          API_ID=$(mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart -N \
+          # 获取 API ID
+          API_ID=$(mysql -h 127.0.0.1 -P 3306 -u root -proot opencart -N \
             -e "SELECT api_id FROM oc_api WHERE username='ci-test' LIMIT 1")
           echo "API ID: $API_ID"
 
-          # 添加多个可能的 Docker 网关 IP，覆盖不同 CI 环境
-          mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart <<SQL
-            INSERT INTO oc_api_ip (api_id, ip) VALUES ($API_ID, '$GATEWAY');
-            INSERT INTO oc_api_ip (api_id, ip) VALUES ($API_ID, '172.17.0.1');
-            INSERT INTO oc_api_ip (api_id, ip) VALUES ($API_ID, '172.18.0.1');
+          # 添加 IP 白名单 — PHP 内置服务器运行在本地，OpenCart 看到 127.0.0.1
+          mysql -h 127.0.0.1 -P 3306 -u root -proot opencart <<SQL
+            INSERT INTO oc_api_ip (api_id, ip) VALUES ($API_ID, '127.0.0.1');
+            INSERT INTO oc_api_ip (api_id, ip) VALUES ($API_ID, '::1');
           SQL
-          echo "API IP 白名单已配置"
+          echo "API IP 白名单已配置 (127.0.0.1, ::1)"
 
-          # ═══ 4. 查找合适的测试商品 ═══
-          # 排除有必填选项的商品（加入购物车会失败）
-          PRODUCT_IDS=$(mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart -N -e "
+          # 查找无必填选项的测试商品
+          PRODUCT_IDS=$(mysql -h 127.0.0.1 -P 3306 -u root -proot opencart -N -e "
             SELECT p.product_id FROM oc_product p
             LEFT JOIN oc_product_option po ON p.product_id = po.product_id
             WHERE po.product_id IS NULL AND p.status = 1 AND p.quantity > 0
-            ORDER BY p.product_id
-            LIMIT 2
+            ORDER BY p.product_id LIMIT 2
           ")
           PID1=$(echo "$PRODUCT_IDS" | sed -n '1p' | tr -d ' ')
           PID2=$(echo "$PRODUCT_IDS" | sed -n '2p' | tr -d ' ')
 
           if [ -z "$PID1" ]; then
-            # 降级：取任意有库存的商品
-            PID1=$(mysql -h 127.0.0.1 -P 3306 -u root -proot bitnami_opencart -N \
+            PID1=$(mysql -h 127.0.0.1 -P 3306 -u root -proot opencart -N \
               -e "SELECT product_id FROM oc_product WHERE status=1 AND quantity>0 ORDER BY product_id LIMIT 1")
             PID2=$PID1
           fi
@@ -128,7 +199,41 @@ jobs:
           echo "DEFAULT_SECOND_PRODUCT_ID=${PID2:-$PID1}" >> $GITHUB_ENV
           echo "测试商品: product_1=$PID1, product_2=${PID2:-$PID1}"
 
-          # ═══ 5. 验证 API 登录可用 ═══
+      # ═══ 启动 PHP 内置服务器 ═══
+      - name: Start OpenCart Server
+        run: |
+          cd opencart
+          # 使用 router.php 处理静态文件请求
+          cat > router.php << 'PHPEOF'
+          <?php
+          // 静态文件直接返回
+          if (preg_match('/\.(?:png|jpg|jpeg|gif|css|js|ico|svg|woff|woff2|ttf|eot|map)$/i', $_SERVER["REQUEST_URI"])) {
+              return false;
+          }
+          // 所有其他请求通过 index.php 处理
+          $_GET['route'] = $_GET['route'] ?? '';
+          require __DIR__ . '/index.php';
+          PHPEOF
+
+          php -S localhost:8080 router.php > /tmp/opencart-server.log 2>&1 &
+          echo $! > /tmp/opencart-server.pid
+          echo "PHP 内置服务器已启动 (PID: $(cat /tmp/opencart-server.pid))"
+
+      # ═══ 等待 OpenCart 就绪 ═══
+      - name: Wait for OpenCart
+        run: |
+          echo "等待 OpenCart 就绪..."
+          for i in $(seq 1 30); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/index.php?route=common/home" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+              echo "OpenCart 已就绪! (HTTP $HTTP_CODE)"
+              break
+            fi
+            echo "等待中... ($i/30, HTTP $HTTP_CODE)"
+            sleep 2
+          done
+
+          # 验证 API 认证
           echo "验证 API 认证..."
           RESP=$(curl -s -X POST "http://localhost:8080/index.php?route=api/account/login" \
             -d "username=ci-test&key=ci-api-key-0123456789abcdef")
@@ -136,19 +241,22 @@ jobs:
           if echo "$RESP" | grep -q "api_token"; then
             echo "✓ API 认证正常"
           else
-            echo "✗ API 认证失败 — 检查 IP 白名单和用户配置"
+            echo "⚠ API 认证可能异常，继续运行测试..."
+            echo "--- 服务器日志（最后 20 行）---"
+            tail -20 /tmp/opencart-server.log || true
           fi
 
+      # ═══ 运行测试 ═══
       - name: Run API Tests
         env:
           OPENCART_BASE_URL: http://localhost:8080
           API_USERNAME: ci-test
           API_KEY: ci-api-key-0123456789abcdef
           DB_HOST: localhost
-          DB_PORT: 3306
+          DB_PORT: '3306'
           DB_USER: root
           DB_PASSWORD: root
-          DB_NAME: bitnami_opencart
+          DB_NAME: opencart
         run: |
           pytest api_tests/ -v --tb=short --alluredir=reports/allure-results || true
 
@@ -159,6 +267,15 @@ jobs:
           name: allure-results
           path: reports/allure-results
 
+      # ═══ 清理：服务器日志（调试用） ═══
+      - name: Dump Server Log (on failure)
+        if: failure()
+        run: |
+          echo "=== OpenCart Server Log ==="
+          cat /tmp/opencart-server.log || echo "(no log)"
+          echo "=== PHP Version ==="
+          php -v
+
   # ═══ Job 2: UI 自动化测试 ═══
   ui-tests:
     runs-on: ubuntu-latest
@@ -166,31 +283,13 @@ jobs:
     needs: api-tests
 
     services:
-      opencart:
-        image: bitnami/opencart:4
-        ports:
-          - 8080:8080
-        env:
-          OPENCART_HOST: localhost
-          OPENCART_DATABASE_HOST: mariadb
-          OPENCART_DATABASE_NAME: bitnami_opencart
-          OPENCART_DATABASE_USER: bn_opencart
-          OPENCART_DATABASE_PASSWORD: bitnami
-        options: >-
-          --health-cmd "curl -f http://localhost:8080 || exit 1"
-          --health-interval 30s
-          --health-timeout 10s
-          --health-retries 10
-
       mariadb:
         image: mariadb:10.11
         ports:
           - 3306:3306
         env:
           MARIADB_ROOT_PASSWORD: root
-          MARIADB_DATABASE: bitnami_opencart
-          MARIADB_USER: bn_opencart
-          MARIADB_PASSWORD: bitnami
+          MARIADB_DATABASE: opencart
 
     steps:
       - name: Checkout Code
@@ -201,19 +300,91 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
+      - name: Install Python Dependencies
         run: pip install -r requirements.txt
+
+      - name: Install PHP
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq php-cli php-mysql php-gd php-curl php-zip php-mbstring php-xml php-intl mysql-client
+
+      - name: Deploy OpenCart
+        run: |
+          set -e
+          OC_VERSION="4.0.2.3"
+          curl -sSL "https://github.com/opencart/opencart/archive/refs/tags/${OC_VERSION}.tar.gz" | tar xz
+          mv "opencart-${OC_VERSION}/upload" opencart
+          rm -rf "opencart-${OC_VERSION}"
+          mkdir -p opencart/storage/{cache,download,logs,session,upload,marketplace,backup}
+
+      - name: Install OpenCart Database
+        env:
+          DB_HOSTNAME: 127.0.0.1
+          DB_USERNAME: root
+          DB_PASSWORD: root
+          DB_DATABASE: opencart
+          DB_PORT: '3306'
+          DB_PREFIX: oc_
+        run: |
+          mysql -h 127.0.0.1 -P 3306 -u root -proot -e "CREATE DATABASE IF NOT EXISTS opencart CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci"
+          php ci/setup-db.php opencart
+
+      - name: Write OpenCart Config
+        run: |
+          cat > opencart/config.php << 'PHPEOF'
+          <?php
+          define('APPLICATION', 'Catalog');
+          define('HTTP_SERVER', 'http://localhost:8080/');
+          define('DIR_OPENCART', __DIR__ . '/');
+          define('DIR_APPLICATION', DIR_OPENCART . 'catalog/');
+          define('DIR_EXTENSION',  DIR_OPENCART . 'extension/');
+          define('DIR_IMAGE',      DIR_OPENCART . 'image/');
+          define('DIR_SYSTEM',     DIR_OPENCART . 'system/');
+          define('DIR_STORAGE',    DIR_OPENCART . 'storage/');
+          define('DIR_LANGUAGE',   DIR_APPLICATION . 'language/');
+          define('DIR_TEMPLATE',   DIR_APPLICATION . 'view/template/');
+          define('DIR_CONFIG',     DIR_SYSTEM . 'config/');
+          define('DIR_CACHE',      DIR_STORAGE . 'cache/');
+          define('DIR_DOWNLOAD',   DIR_STORAGE . 'download/');
+          define('DIR_LOGS',       DIR_STORAGE . 'logs/');
+          define('DIR_SESSION',    DIR_STORAGE . 'session/');
+          define('DIR_UPLOAD',     DIR_STORAGE . 'upload/');
+          define('DB_DRIVER',   'mysqli');
+          define('DB_HOSTNAME', '127.0.0.1');
+          define('DB_PORT',     '3306');
+          define('DB_USERNAME', 'root');
+          define('DB_PASSWORD', 'root');
+          define('DB_DATABASE', 'opencart');
+          define('DB_PREFIX',   'oc_');
+          define('OPENCART_SERVER', 'http://localhost:8080/');
+          PHPEOF
+          cp opencart/config.php opencart/admin/config.php
+          sed -i "s/define('APPLICATION', 'Catalog')/define('APPLICATION', 'Admin')/" opencart/admin/config.php
+
+      - name: Start OpenCart Server
+        run: |
+          cd opencart
+          cat > router.php << 'PHPEOF'
+          <?php
+          if (preg_match('/\.(?:png|jpg|jpeg|gif|css|js|ico|svg|woff|woff2|ttf|eot|map)$/i', $_SERVER["REQUEST_URI"])) {
+              return false;
+          }
+          $_GET['route'] = $_GET['route'] ?? '';
+          require __DIR__ . '/index.php';
+          PHPEOF
+          php -S localhost:8080 router.php > /tmp/opencart-server.log 2>&1 &
+          echo $! > /tmp/opencart-server.pid
 
       - name: Wait for OpenCart
         run: |
-          echo "等待 OpenCart 启动..."
           for i in $(seq 1 30); do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:8080 | grep -q "200\|302"; then
-              echo "OpenCart 已就绪!"
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8080/index.php?route=common/home" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "302" ]; then
+              echo "OpenCart ready (HTTP $HTTP_CODE)"
               break
             fi
-            echo "等待中... ($i/30)"
-            sleep 10
+            echo "Waiting... ($i/30, HTTP $HTTP_CODE)"
+            sleep 2
           done
 
       - name: Run UI Smoke Tests (Headless Chrome)
