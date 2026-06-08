@@ -275,9 +275,13 @@ jobs:
           if (preg_match('/\.(?:png|jpg|jpeg|gif|css|js|ico|svg|woff|woff2|ttf|eot|map)$/i', $_SERVER["REQUEST_URI"])) {
               return false;
           }
-          // 所有其他请求通过 index.php 处理
           $_GET['route'] = $_GET['route'] ?? '';
-          require __DIR__ . '/index.php';
+          // Admin 请求路由到 admin/index.php
+          if (str_starts_with($_SERVER['REQUEST_URI'], '/admin')) {
+              require __DIR__ . '/admin/index.php';
+          } else {
+              require __DIR__ . '/index.php';
+          }
           PHPEOF
 
           php -S localhost:8080 router.php > /tmp/opencart-server.log 2>&1 &
@@ -497,7 +501,12 @@ jobs:
               return false;
           }
           $_GET['route'] = $_GET['route'] ?? '';
-          require __DIR__ . '/index.php';
+          // Admin 请求路由到 admin/index.php
+          if (str_starts_with($_SERVER['REQUEST_URI'], '/admin')) {
+              require __DIR__ . '/admin/index.php';
+          } else {
+              require __DIR__ . '/index.php';
+          }
           PHPEOF
           php -S localhost:8080 router.php > /tmp/opencart-server.log 2>&1 &
           echo $! > /tmp/opencart-server.pid

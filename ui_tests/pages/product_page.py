@@ -37,7 +37,13 @@ class SearchResultPage(BasePage):
         """
         names = self.find_all(self.PRODUCT_NAME)
         if len(names) >= index:
-            names[index - 1].click()
+            target = names[index - 1]
+            # 滚动到可见区域避免被 sticky 元素拦截
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView({behavior:'instant',block:'center'});",
+                target
+            )
+            target.click()
         return ProductDetailPage(self.driver, self.base_url)
 
     def get_no_results_message(self) -> str:

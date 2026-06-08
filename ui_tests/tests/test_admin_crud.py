@@ -16,7 +16,7 @@ from ui_tests.pages.admin_page import (
 def _admin_login(driver, base_url, config):
     """管理后台登录辅助函数（复用）"""
     login_page = AdminLoginPage(driver, base_url)
-    login_page.open("/admin")
+    login_page.open("/admin/index.php?route=common/login")
 
     # 如果已经在 Dashboard（之前登录未过期），直接返回
     if "dashboard" in login_page.get_current_url().lower():
@@ -34,7 +34,7 @@ class TestAdminLogin:
     def test_admin_login_success(self, driver, base_url, config):
         """等价类-有效：正确的用户名 + 密码"""
         login_page = AdminLoginPage(driver, base_url)
-        login_page.open("/admin")
+        login_page.open("/admin/index.php?route=common/login")
 
         dashboard = login_page.login(config.ADMIN_USERNAME, config.ADMIN_PASSWORD)
 
@@ -49,7 +49,7 @@ class TestAdminLogin:
     def test_admin_login_wrong_password(self, driver, base_url, config):
         """等价类-无效：正确用户名 + 错误密码"""
         login_page = AdminLoginPage(driver, base_url)
-        login_page.open("/admin")
+        login_page.open("/admin/index.php?route=common/login")
 
         login_page.login(config.ADMIN_USERNAME, "WrongAdminPassword")
 
