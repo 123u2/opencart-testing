@@ -66,7 +66,7 @@ $registry->set('config', $config);
 
 // Loader — install model 需要它来加载 helper
 // Loader 构造: __construct(\Opencart\System\Engine\Registry $registry)
-$load = new \Opencart\System\Engine\Load($registry);
+$load = new \Opencart\System\Engine\Loader($registry);
 $registry->set('load', $load);
 
 // Event — 有些 model 基类方法可能触发事件
