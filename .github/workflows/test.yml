@@ -71,12 +71,18 @@ jobs:
           mkdir -p opencart/storage/marketplace
           mkdir -p opencart/storage/backup
 
-          # 替换 vendor.php：CI 不需要 AWS/Twig 等第三方库，跳过缺失文件避免 fatal error
+          # 替换 vendor.php：优先使用 Composer autoloader，缺失则静默跳过
           cat > opencart/system/vendor.php << 'PHPEOF'
           <?php
-          // CI stub: 仅注册存在的 vendor 路径，缺失的静默跳过
+          // CI stub: 优先使用 Composer autoloader，缺失时手动回退
           $vendorBase = DIR_STORAGE . 'vendor/';
 
+          // Composer autoloader（如果通过 Composer 安装了依赖）
+          if (is_file($vendorBase . 'autoload.php')) {
+              require_once $vendorBase . 'autoload.php';
+          }
+
+          // 手动注册 Composer 未覆盖的 vendor 路径（缺失则静默跳过）
           $registrations = [
               ['AWS/CRT',           'aws/aws-crt-php/src/AWS/CRT/'],
               ['AWS/CRT/Auth',      'aws/aws-crt-php/src/AWS/CRT/Auth/'],
@@ -103,7 +109,7 @@ jobs:
               }
           }
 
-          // 安全加载 functions/boostrap 文件（缺失则跳过）
+          // 安全加载 functions/bootstrap 文件（缺失则跳过）
           $optionalFiles = [
               'aws/aws-sdk-php/src/functions.php',
               'guzzlehttp/guzzle/src/functions_include.php',
@@ -122,14 +128,13 @@ jobs:
           }
           PHPEOF
 
-          # 下载 Twig（OpenCart 4.x 模板引擎必需，vendor.php 会按需注册）
-          TWIG_VER="3.7.1"
-          echo "下载 Twig v${TWIG_VER}..."
-          curl -sSL "https://github.com/twigphp/Twig/archive/refs/tags/v${TWIG_VER}.tar.gz" | tar xz
-          mkdir -p opencart/storage/vendor/twig/twig/src
-          cp -r "Twig-${TWIG_VER}/src/"* opencart/storage/vendor/twig/twig/src/
-          rm -rf "Twig-${TWIG_VER}"
-          echo "Twig 已安装到 storage/vendor/twig/twig/src/"
+          # 使用 Composer 安装 Twig（OpenCart 4.x 模板引擎必需，Packagist CDN 比 GitHub Archive 更可靠）
+          echo "通过 Composer 安装 Twig..."
+          cd opencart
+          echo '{"require":{"twig/twig":"^3.0"}}' > composer.json
+          COMPOSER_VENDOR_DIR=storage/vendor composer install --no-interaction --no-dev --prefer-dist --quiet 2>&1
+          cd ..
+          echo "Twig 已通过 Composer 安装到 storage/vendor/"
 
           echo "OpenCart 已部署到 $(pwd)/opencart"
 
@@ -377,10 +382,17 @@ jobs:
           rm -rf "opencart-${OC_VERSION}"
           mkdir -p opencart/storage/{cache,download,logs,session,upload,marketplace,backup}
 
-          # CI stub: 安全跳过缺失的 vendor 文件
+          # CI stub: 优先使用 Composer autoloader，缺失时手动回退
           cat > opencart/system/vendor.php << 'PHPEOF'
           <?php
           $vendorBase = DIR_STORAGE . 'vendor/';
+
+          // Composer autoloader（如果通过 Composer 安装了依赖）
+          if (is_file($vendorBase . 'autoload.php')) {
+              require_once $vendorBase . 'autoload.php';
+          }
+
+          // 手动注册 Composer 未覆盖的 vendor 路径
           $registrations = [
               ['AWS/CRT',           'aws/aws-crt-php/src/AWS/CRT/'],
               ['AWS/CRT/Auth',      'aws/aws-crt-php/src/AWS/CRT/Auth/'],
@@ -424,14 +436,13 @@ jobs:
           }
           PHPEOF
 
-          # 下载 Twig（OpenCart 4.x 模板引擎必需）
-          TWIG_VER="3.7.1"
-          echo "下载 Twig v${TWIG_VER}..."
-          curl -sSL "https://github.com/twigphp/Twig/archive/refs/tags/v${TWIG_VER}.tar.gz" | tar xz
-          mkdir -p opencart/storage/vendor/twig/twig/src
-          cp -r "Twig-${TWIG_VER}/src/"* opencart/storage/vendor/twig/twig/src/
-          rm -rf "Twig-${TWIG_VER}"
-          echo "Twig 已安装到 storage/vendor/twig/twig/src/"
+          # 使用 Composer 安装 Twig（Packagist CDN 比 GitHub Archive 更可靠）
+          echo "通过 Composer 安装 Twig..."
+          cd opencart
+          echo '{"require":{"twig/twig":"^3.0"}}' > composer.json
+          COMPOSER_VENDOR_DIR=storage/vendor composer install --no-interaction --no-dev --prefer-dist --quiet 2>&1
+          cd ..
+          echo "Twig 已通过 Composer 安装到 storage/vendor/"
 
       - name: Install OpenCart Database
         env:
