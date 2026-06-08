@@ -122,6 +122,15 @@ jobs:
           }
           PHPEOF
 
+          # 下载 Twig（OpenCart 4.x 模板引擎必需，vendor.php 会按需注册）
+          TWIG_VER="3.7.1"
+          echo "下载 Twig v${TWIG_VER}..."
+          curl -sSL "https://github.com/twigphp/Twig/archive/refs/tags/v${TWIG_VER}.tar.gz" | tar xz
+          mkdir -p opencart/storage/vendor/twig/twig/src
+          cp -r "Twig-${TWIG_VER}/src/"* opencart/storage/vendor/twig/twig/src/
+          rm -rf "Twig-${TWIG_VER}"
+          echo "Twig 已安装到 storage/vendor/twig/twig/src/"
+
           echo "OpenCart 已部署到 $(pwd)/opencart"
 
       # ═══ 等待 MariaDB 就绪 ═══
@@ -414,6 +423,15 @@ jobs:
               }
           }
           PHPEOF
+
+          # 下载 Twig（OpenCart 4.x 模板引擎必需）
+          TWIG_VER="3.7.1"
+          echo "下载 Twig v${TWIG_VER}..."
+          curl -sSL "https://github.com/twigphp/Twig/archive/refs/tags/v${TWIG_VER}.tar.gz" | tar xz
+          mkdir -p opencart/storage/vendor/twig/twig/src
+          cp -r "Twig-${TWIG_VER}/src/"* opencart/storage/vendor/twig/twig/src/
+          rm -rf "Twig-${TWIG_VER}"
+          echo "Twig 已安装到 storage/vendor/twig/twig/src/"
 
       - name: Install OpenCart Database
         env:
