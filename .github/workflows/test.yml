@@ -213,6 +213,7 @@ jobs:
           # Admin config（结构同上，仅 APPLICATION 不同）
           cp opencart/config.php opencart/admin/config.php
           sed -i "s/define('APPLICATION', 'Catalog')/define('APPLICATION', 'Admin')/" opencart/admin/config.php
+          sed -i "s|DIR_OPENCART \. 'catalog/'|DIR_OPENCART . 'admin/'|" opencart/admin/config.php
 
           echo "config.php 已写入"
 

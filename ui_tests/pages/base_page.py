@@ -90,9 +90,14 @@ class BasePage:
     # ── 元素操作 ──────────────────────────────────────────
 
     def click(self, locator: tuple, timeout: int = None):
-        """点击元素（等待可点击后点击）"""
+        """点击元素（等待可点击 → 滚动到可见 → 点击）"""
         wait = WebDriverWait(self.driver, timeout or 10)
         element = wait.until(EC.element_to_be_clickable(locator))
+        # 滚动到视图中央，避免被 sticky 元素（cookie bar/footer）拦截
+        self.driver.execute_script(
+            "arguments[0].scrollIntoView({behavior:'instant',block:'center'});",
+            element
+        )
         element.click()
         return self
 
