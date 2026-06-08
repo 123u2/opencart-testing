@@ -177,7 +177,10 @@ jobs:
           <?php
           // 自动检测 Application：admin/ 和 catalog 共用同一 config
           // PHP 内置服务器下 require_once('config.php') 始终解析到本文件
-          $is_admin = isset($_SERVER['SCRIPT_NAME']) && str_contains($_SERVER['SCRIPT_NAME'], '/admin');
+          // PHP built-in server 下 SCRIPT_NAME 指向 router.php 而非实际请求路径
+          // 需同时检查 REQUEST_URI 来判断是否为 admin 请求
+          $is_admin = (isset($_SERVER['SCRIPT_NAME']) && str_contains($_SERVER['SCRIPT_NAME'], '/admin'))
+                   || (isset($_SERVER['REQUEST_URI']) && str_starts_with($_SERVER['REQUEST_URI'], '/admin'));
           define('APPLICATION', $is_admin ? 'Admin' : 'Catalog');
 
           // HTTP
@@ -211,6 +214,15 @@ jobs:
           // OpenCart
           define('OPENCART_SERVER', 'http://localhost:8080/');
           PHPEOF
+
+          # 创建 admin/config.php（指向根 config.php）
+          # admin/index.php 使用 is_file('config.php') 查找，虽然 CWD 能找到根的 config.php，
+          # 但显式创建 admin/config.php 更稳健，避免 PHP SAPI 差异导致找不到
+          cat > opencart/admin/config.php << 'PHPEOF'
+          <?php
+          require_once(__DIR__ . '/../config.php');
+          PHPEOF
+          echo "admin/config.php 已创建"
 
           echo "config.php 已写入（自动检测 admin/catalog）"
 
@@ -462,7 +474,10 @@ jobs:
         run: |
           cat > opencart/config.php << 'PHPEOF'
           <?php
-          $is_admin = isset($_SERVER['SCRIPT_NAME']) && str_contains($_SERVER['SCRIPT_NAME'], '/admin');
+          // PHP built-in server 下 SCRIPT_NAME 指向 router.php 而非实际请求路径
+          // 需同时检查 REQUEST_URI 来判断是否为 admin 请求
+          $is_admin = (isset($_SERVER['SCRIPT_NAME']) && str_contains($_SERVER['SCRIPT_NAME'], '/admin'))
+                   || (isset($_SERVER['REQUEST_URI']) && str_starts_with($_SERVER['REQUEST_URI'], '/admin'));
           define('APPLICATION', $is_admin ? 'Admin' : 'Catalog');
           define('HTTP_SERVER', 'http://localhost:8080/');
           define('DIR_OPENCART', __DIR__ . '/');
@@ -488,6 +503,13 @@ jobs:
           define('DB_PREFIX',   'oc_');
           define('OPENCART_SERVER', 'http://localhost:8080/');
           PHPEOF
+
+          # 创建 admin/config.php（指向根 config.php）
+          cat > opencart/admin/config.php << 'PHPEOF'
+          <?php
+          require_once(__DIR__ . '/../config.php');
+          PHPEOF
+          echo "admin/config.php 已创建"
 
       - name: Start OpenCart Server
         run: |
@@ -525,6 +547,14 @@ jobs:
           OPENCART_BASE_URL: http://localhost:8080
         run: |
           pytest ui_tests/ -v --browser=chrome-headless -m smoke || true
+
+      - name: Dump Server Log (on failure)
+        if: failure()
+        run: |
+          echo "=== OpenCart Server Log ==="
+          cat /tmp/opencart-server.log || echo "(no log)"
+          echo "=== PHP Version ==="
+          php -v
 
   # ═══ Job 3: Python 代码风格检查 ═══
   lint:

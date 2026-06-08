@@ -10,6 +10,7 @@ OpenCart 4.x 结账步骤：
   Step 5: 支付方式
   Step 6: 确认下单
 """
+import logging
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support import expected_conditions as EC
@@ -48,14 +49,18 @@ class CheckoutPage(BasePage):
     """
 
     # === Step 1: 结账选项 ===
-    GUEST_RADIO = (By.CSS_SELECTOR, "input[value='guest']")
-    REGISTER_RADIO = (By.CSS_SELECTOR, "input[value='register']")
+    # OpenCart 4.0.2.3: guest radio id="input-guest" value="0", register radio id="input-register" value="1"
+    GUEST_RADIO = (By.ID, "input-guest")
+    REGISTER_RADIO = (By.ID, "input-register")
     LOGIN_EMAIL = (By.ID, "input-login-email")
     LOGIN_PASSWORD = (By.ID, "input-login-password")
     LOGIN_BTN = (By.ID, "button-login")
-    CHECKOUT_CONTINUE_BTN = (By.ID, "button-account")
+    # OpenCart 4.0.2.3: the account continue button in register.twig is id="button-register"
+    CHECKOUT_CONTINUE_BTN = (By.ID, "button-register")
 
     # === Step 2: 账单地址 ===
+    # AJAX 容器：支付地址区加载后，#checkout-payment-address 内会包含表单
+    PAYMENT_ADDRESS_CONTAINER = (By.ID, "checkout-payment-address")
     BILLING_FIRST_NAME = (By.ID, "input-payment-firstname")
     BILLING_LAST_NAME = (By.ID, "input-payment-lastname")
     BILLING_COMPANY = (By.ID, "input-payment-company")
@@ -136,7 +141,17 @@ class CheckoutPage(BasePage):
             country: 国家（可选，默认不修改）
             zone: 省/州（可选，默认不修改）
         """
-        # 等待账单地址表单 AJAX 加载完成（OpenCart 4.x 动态加载各区域）
+        # 等待支付地址区域 AJAX 加载完成（OpenCart 4.x 动态加载各区域）
+        # 先确认容器可见（AJAX 完成），再等表单字段可见
+        try:
+            self.wait.until(EC.visibility_of_element_located(self.PAYMENT_ADDRESS_CONTAINER))
+            # 确保容器内已渲染表单内容（不只是空 div）
+            self.wait.until(
+                lambda d: len(d.find_element(*self.PAYMENT_ADDRESS_CONTAINER).text.strip()) > 0,
+                "账单地址区域未在 AJAX 加载后填充内容"
+            )
+        except TimeoutException:
+            logging.warning("支付地址区域未能加载，尝试继续填写")
         self.wait.until(EC.visibility_of_element_located(self.BILLING_FIRST_NAME))
         self.send_keys(self.BILLING_FIRST_NAME, first_name)
         self.send_keys(self.BILLING_LAST_NAME, last_name)
