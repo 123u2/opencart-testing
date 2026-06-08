@@ -170,20 +170,22 @@ jobs:
           # 运行安装脚本
           php ci/setup-db.php opencart
 
-      # ═══ 写入 config.php（运行时配置） ═══
+      # ═══ 写入 config.php（运行时自动检测 admin/catalog） ═══
       - name: Write OpenCart Config
         run: |
           cat > opencart/config.php << 'PHPEOF'
           <?php
-          // APPLICATION
-          define('APPLICATION', 'Catalog');
+          // 自动检测 Application：admin/ 和 catalog 共用同一 config
+          // PHP 内置服务器下 require_once('config.php') 始终解析到本文件
+          $is_admin = isset($_SERVER['SCRIPT_NAME']) && str_contains($_SERVER['SCRIPT_NAME'], '/admin');
+          define('APPLICATION', $is_admin ? 'Admin' : 'Catalog');
 
           // HTTP
           define('HTTP_SERVER', 'http://localhost:8080/');
 
           // DIR
           define('DIR_OPENCART', __DIR__ . '/');
-          define('DIR_APPLICATION', DIR_OPENCART . 'catalog/');
+          define('DIR_APPLICATION', DIR_OPENCART . ($is_admin ? 'admin/' : 'catalog/'));
           define('DIR_EXTENSION',  DIR_OPENCART . 'extension/');
           define('DIR_IMAGE',      DIR_OPENCART . 'image/');
           define('DIR_SYSTEM',     DIR_OPENCART . 'system/');
@@ -210,12 +212,7 @@ jobs:
           define('OPENCART_SERVER', 'http://localhost:8080/');
           PHPEOF
 
-          # Admin config（结构同上，仅 APPLICATION 不同）
-          cp opencart/config.php opencart/admin/config.php
-          sed -i "s/define('APPLICATION', 'Catalog')/define('APPLICATION', 'Admin')/" opencart/admin/config.php
-          sed -i "s|DIR_OPENCART \. 'catalog/'|DIR_OPENCART . 'admin/'|" opencart/admin/config.php
-
-          echo "config.php 已写入"
+          echo "config.php 已写入（自动检测 admin/catalog）"
 
       # ═══ 配置 API 用户 + 测试数据 ═══
       - name: Setup API Test User
@@ -465,10 +462,11 @@ jobs:
         run: |
           cat > opencart/config.php << 'PHPEOF'
           <?php
-          define('APPLICATION', 'Catalog');
+          $is_admin = isset($_SERVER['SCRIPT_NAME']) && str_contains($_SERVER['SCRIPT_NAME'], '/admin');
+          define('APPLICATION', $is_admin ? 'Admin' : 'Catalog');
           define('HTTP_SERVER', 'http://localhost:8080/');
           define('DIR_OPENCART', __DIR__ . '/');
-          define('DIR_APPLICATION', DIR_OPENCART . 'catalog/');
+          define('DIR_APPLICATION', DIR_OPENCART . ($is_admin ? 'admin/' : 'catalog/'));
           define('DIR_EXTENSION',  DIR_OPENCART . 'extension/');
           define('DIR_IMAGE',      DIR_OPENCART . 'image/');
           define('DIR_SYSTEM',     DIR_OPENCART . 'system/');
@@ -490,8 +488,6 @@ jobs:
           define('DB_PREFIX',   'oc_');
           define('OPENCART_SERVER', 'http://localhost:8080/');
           PHPEOF
-          cp opencart/config.php opencart/admin/config.php
-          sed -i "s/define('APPLICATION', 'Catalog')/define('APPLICATION', 'Admin')/" opencart/admin/config.php
 
       - name: Start OpenCart Server
         run: |

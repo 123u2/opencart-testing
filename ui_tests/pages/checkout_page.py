@@ -12,6 +12,7 @@ OpenCart 4.x 结账步骤：
 """
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from .base_page import BasePage
 
@@ -135,6 +136,8 @@ class CheckoutPage(BasePage):
             country: 国家（可选，默认不修改）
             zone: 省/州（可选，默认不修改）
         """
+        # 等待账单地址表单 AJAX 加载完成（OpenCart 4.x 动态加载各区域）
+        self.wait.until(EC.visibility_of_element_located(self.BILLING_FIRST_NAME))
         self.send_keys(self.BILLING_FIRST_NAME, first_name)
         self.send_keys(self.BILLING_LAST_NAME, last_name)
         self.send_keys(self.BILLING_ADDRESS1, address)
