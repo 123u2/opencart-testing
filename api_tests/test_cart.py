@@ -194,8 +194,8 @@ class TestCart:
         assert len(body["totals"]) > 0, "totals 不应为空"
 
         labels = [t["title"] for t in body["totals"]]
-        assert any("Sub-Total" in l for l in labels), f"应包含 Sub-Total: {labels}"
-        assert any("Total" in l for l in labels), f"应包含 Total: {labels}"
+        assert any("Sub-Total" in label for label in labels), f"应包含 Sub-Total: {labels}"
+        assert any("Total" in label for label in labels), f"应包含 Total: {labels}"
 
     # ── 优惠券 ────────────────────────────────────────────
 

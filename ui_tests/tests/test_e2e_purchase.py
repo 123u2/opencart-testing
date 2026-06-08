@@ -8,9 +8,7 @@ E2E 用户购物流程测试 — 项目核心亮点
 import allure
 import pytest
 from ui_tests.pages.home_page import HomePage
-from ui_tests.pages.product_page import SearchResultPage, ProductDetailPage
 from ui_tests.pages.cart_page import CartPage
-from ui_tests.pages.checkout_page import CheckoutPage
 
 
 @allure.feature("核心业务 — 用户购物旅程")

@@ -10,9 +10,6 @@ import pytest
 from ui_tests.pages.admin_page import (
     AdminLoginPage,
     AdminDashboardPage,
-    AdminProductListPage,
-    AdminProductFormPage,
-    AdminOrderListPage,
 )
 
 

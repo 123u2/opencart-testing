@@ -16,7 +16,6 @@ OpenCart 4.x 结账路由：
   - 确认订单: api/sale/order|confirm
 """
 import allure
-import pytest
 
 
 @allure.feature("结账流程 — 核心业务")

@@ -6,7 +6,6 @@
   3. 只用 SELECT，不做写入 — 测试数据由 API 或 seed 脚本管理
 """
 import logging
-from contextlib import contextmanager
 import pymysql
 
 logger = logging.getLogger(__name__)
