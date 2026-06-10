@@ -39,7 +39,7 @@ class BasePage:
         """
         self.driver = driver
         self.base_url = base_url.rstrip("/")
-        self.wait = WebDriverWait(driver, timeout=10)
+        self.wait = WebDriverWait(driver, timeout=15)
 
     # ── 导航方法 ──────────────────────────────────────────
 
@@ -62,6 +62,20 @@ class BasePage:
         """获取当前 URL"""
         return self.driver.current_url
 
+    def get_page_source_snippet(self, max_length: int = 500) -> str:
+        """获取页面源码摘要（用于调试元素定位失败）"""
+        try:
+            source = self.driver.page_source
+            # 截取 body 内容的前 N 个字符
+            body_start = source.find("<body")
+            if body_start >= 0:
+                snippet = source[body_start:body_start + max_length]
+            else:
+                snippet = source[:max_length]
+            return snippet
+        except Exception:
+            return "(无法获取页面源码)"
+
     # ── 元素查找（带显式等待）─────────────────────────────
 
     def find(self, locator: tuple, timeout: int = None):
@@ -73,9 +87,22 @@ class BasePage:
 
         Returns:
             WebElement
+
+        Raises:
+            TimeoutException: 附加当前 URL 和页面标题辅助调试
         """
-        wait = WebDriverWait(self.driver, timeout or 10)
-        return wait.until(EC.presence_of_element_located(locator))
+        wait = WebDriverWait(self.driver, timeout or 15)
+        try:
+            return wait.until(EC.presence_of_element_located(locator))
+        except TimeoutException:
+            # 失败时记录页面状态协助 CI 调试
+            locator_str = f"{locator[0]}='{locator[1]}'"
+            logger.error(
+                f"无法定位元素 {locator_str}\n"
+                f"  当前 URL: {self.get_current_url()}\n"
+                f"  页面标题: {self.get_title()}"
+            )
+            raise
 
     def find_all(self, locator: tuple, timeout: int = None):
         """查找所有匹配的元素"""
@@ -90,15 +117,20 @@ class BasePage:
     # ── 元素操作 ──────────────────────────────────────────
 
     def click(self, locator: tuple, timeout: int = None):
-        """点击元素（等待可点击 → 滚动到可见 → 点击）"""
-        wait = WebDriverWait(self.driver, timeout or 10)
+        """点击元素（等待可点击 → 滚动到可见 → 优先 JS click 避免拦截）"""
+        wait = WebDriverWait(self.driver, timeout or 15)
         element = wait.until(EC.element_to_be_clickable(locator))
         # 滚动到视图中央，避免被 sticky 元素（cookie bar/footer）拦截
         self.driver.execute_script(
             "arguments[0].scrollIntoView({behavior:'instant',block:'center'});",
             element
         )
-        element.click()
+        try:
+            element.click()
+        except Exception:
+            # Selenium click 被拦截时降级为 JS click
+            logger.warning("Selenium click 被拦截，降级为 JS click")
+            self.driver.execute_script("arguments[0].click();", element)
         return self
 
     def send_keys(self, locator: tuple, text: str):

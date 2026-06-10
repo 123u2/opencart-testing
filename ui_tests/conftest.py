@@ -94,7 +94,10 @@ def driver(request):
         )
 
     driver.maximize_window()
-    driver.implicitly_wait(Config.UI_TIMEOUT)
+    # 注意：不要使用 implicitly_wait，它会与 WebDriverWait（显式等待）冲突，
+    # 导致不可预测的等待时间。BasePage 中统一使用显式等待策略。
+    # 设置页面加载超时，避免 driver.get() 永久阻塞
+    driver.set_page_load_timeout(30)
 
     yield driver
 

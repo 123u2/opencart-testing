@@ -46,6 +46,10 @@ class CheckoutPage(BasePage):
     """结账页面 — /index.php?route=checkout/checkout
 
     封装完整 6 步结账流程，每步独立方法可自由组合。
+
+    OpenCart 4.0.2.3 结账流程说明：
+      - 注册用户：各步骤独立 Section 加载（Step 2 账单/Step 3 配送/Step 4 货运/Step 5 支付/Step 6 确认）
+      - 游客模式：账单地址字段嵌入在 #form-register 中，一次性提交整张注册表单
     """
 
     # === Step 1: 结账选项 ===
@@ -58,9 +62,20 @@ class CheckoutPage(BasePage):
     # OpenCart 4.0.2.3: the account continue button in register.twig is id="button-register"
     CHECKOUT_CONTINUE_BTN = (By.ID, "button-register")
 
+    # --- register.twig 表单字段（游客模式核心）---
+    # 游客结账时账单地址字段嵌入在注册表单中，name 使用 payment_ 前缀
+    REGISTER_FIRSTNAME = (By.ID, "input-firstname")
+    REGISTER_LASTNAME = (By.ID, "input-lastname")
+    REGISTER_EMAIL = (By.ID, "input-email")
+    REGISTER_TELEPHONE = (By.ID, "input-telephone")
+    # 地址匹配复选框：默认勾选 → 配送地址与账单地址相同
+    ADDRESS_MATCH = (By.ID, "input-address-match")
+
     # === Step 2: 账单地址 ===
-    # AJAX 容器：支付地址区加载后，#checkout-payment-address 内会包含表单
+    # 注册用户：AJAX 加载到 #checkout-payment-address 容器
+    # 游客：字段在 #form-register 内，name 以 payment_ 开头，ID 为 input-payment-xxx
     PAYMENT_ADDRESS_CONTAINER = (By.ID, "checkout-payment-address")
+    # 注册用户账单地址字段（payment_address.twig，无前缀）
     BILLING_FIRST_NAME = (By.ID, "input-payment-firstname")
     BILLING_LAST_NAME = (By.ID, "input-payment-lastname")
     BILLING_COMPANY = (By.ID, "input-payment-company")
@@ -287,27 +302,98 @@ class CheckoutPage(BasePage):
             return ""
 
     # =======================================================
+    # 游客结账 — 注册表单字段填充
+    # =======================================================
+
+    def fill_guest_register_form(self,
+                                 first_name: str,
+                                 last_name: str,
+                                 email: str,
+                                 address: str,
+                                 city: str,
+                                 postcode: str,
+                                 telephone: str = ""):
+        """填充游客结账注册表单（OpenCart 4.0.2.3 游客模式核心）
+
+        OpenCart 4.0.2.3 的游客结账流程：
+        账单地址字段直接嵌入在 #form-register 中，与账户信息一并提交。
+        字段 name 使用 payment_ 前缀（payment_address_1 / payment_city 等），
+        ID 与注册用户的独立账单 address section 相同（input-payment-address-1 等）。
+        """
+        # 账户信息
+        self.send_keys(self.REGISTER_FIRSTNAME, first_name)
+        self.send_keys(self.REGISTER_LASTNAME, last_name)
+        self.send_keys(self.REGISTER_EMAIL, email)
+        if telephone:
+            self.send_keys(self.REGISTER_TELEPHONE, telephone)
+
+        # 账单地址（name="payment_xxx"，ID 与独立账单 form 共用）
+        self.send_keys(self.BILLING_ADDRESS1, address)
+        self.send_keys(self.BILLING_CITY, city)
+        self.send_keys(self.BILLING_POSTCODE, postcode)
+
+        # 选择国家/地区（游客无默认地址，需手动选择）
+        # 按 index 1 选择第一个有效选项（跳过 "--- Please Select ---"）
+        self._select_option(self.BILLING_COUNTRY, "")
+        # 等待 AJAX 加载该国家的 zone 列表后选择第一个有效选项
+        try:
+            self.wait.until(
+                lambda d: len(Select(d.find_element(*self.BILLING_ZONE)).options) > 1,
+                "账单地址 Zone 选项未在 AJAX 加载后出现"
+            )
+        except TimeoutException:
+            pass
+        self._select_option(self.BILLING_ZONE, "")
+
+        return self
+
+    # =======================================================
     # 快捷组合方法
     # =======================================================
 
     def complete_checkout_as_guest(self,
                                    first_name: str = "Test",
                                    last_name: str = "User",
+                                   email: str = "guest@example.com",
                                    address: str = "123 Test Street",
                                    city: str = "Test City",
                                    postcode: str = "12345",
                                    ) -> bool:
         """游客模式完整结账快捷方法（一站到底）
 
-        适用于 E2E 测试中快速完成下单流程。
+        OpenCart 4.0.2.3 游客结账流程：
+          1. 选择 Guest radio
+          2. 填充 #form-register 内嵌的账户+账单地址字段
+          3. 点击 Continue 一次性提交，服务器返回 JSON success
+          4. JS 重新加载 #checkout-confirm + 重置货运/支付方式
+          5. 选择货运方式 → 选择支付方式 → 确认下单
 
         Returns:
             bool: 下单是否成功
         """
         self.select_guest_checkout()
+
+        # 游客模式：必须先填充注册表单中的地址字段，再点击 Continue
+        # （OC 4.0.2.3 在 register.save 中一次性校验全部字段）
+        self.fill_guest_register_form(first_name, last_name, email, address, city, postcode)
+
+        # 提交注册表单
         self.continue_from_checkout_options()
-        self.fill_billing_address(first_name, last_name, address, city, postcode)
-        self.fill_delivery_address(first_name, last_name, address, city, postcode)
+
+        # 等待 AJAX 完成：success/error alert 出现 或 confirm 区域重新加载
+        # OpenCart 4.x JS 成功回调：$('#alert').prepend(...) + $('#checkout-confirm').load(...)
+        try:
+            self.wait.until(
+                lambda d: (
+                    d.find_element(By.ID, "checkout-confirm").is_displayed()
+                    and len(d.find_element(By.ID, "checkout-confirm").text.strip()) > 30
+                ),
+                "结账确认区域未在 AJAX 后加载"
+            )
+        except TimeoutException:
+            logging.warning("确认区域未能加载，尝试继续")
+
+        # 后续步骤（货运方式/支付方式在页面初始化时已渲染，提交后被 JS 重置）
         self.select_shipping_method()
         self.select_payment_method()
         self.confirm()

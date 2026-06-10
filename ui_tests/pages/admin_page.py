@@ -2,9 +2,13 @@
 后台管理相关 Page Object
 包含：登录页、Dashboard、商品管理、订单管理
 """
+import logging
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
+from selenium.common.exceptions import TimeoutException
 from .base_page import BasePage
+
+logger = logging.getLogger(__name__)
 
 
 class AdminLoginPage(BasePage):
@@ -15,9 +19,36 @@ class AdminLoginPage(BasePage):
     LOGIN_BTN = (By.CSS_SELECTOR, "button[type='submit']")
     ERROR_ALERT = (By.CSS_SELECTOR, ".alert-danger")
     FORGOTTEN_LINK = (By.LINK_TEXT, "Forgotten Password")
+    # 登录表单容器 — 用于确认页面已正确渲染
+    LOGIN_FORM = (By.ID, "form-login")
+
+    def _wait_for_login_form(self, timeout: int = 15):
+        """等待登录表单出现（带诊断信息）
+
+        如果页面显示 PHP 错误而非登录表单，可通过日志定位问题。
+        """
+        try:
+            self.find(self.LOGIN_FORM, timeout=timeout)
+        except TimeoutException:
+            url = self.get_current_url()
+            title = self.get_title()
+            snippet = self.get_page_source_snippet(800)
+            logger.error(
+                f"管理后台登录表单未能加载！\n"
+                f"  URL: {url}\n"
+                f"  Title: {title}\n"
+                f"  Source:\n{snippet}"
+            )
+            raise
 
     def login(self, username: str, password: str):
-        """登录后台"""
+        """登录后台（OpenCart 4.0.2.3 AJAX 登录）
+
+        OpenCart 4.0.2.3 登录表单使用 data-oc-toggle="ajax"，
+        提交后由 JavaScript 处理登录逻辑。
+        """
+        # 确认登录表单已渲染（而非 PHP 错误页）
+        self._wait_for_login_form(timeout=20)
         self.send_keys(self.USERNAME_INPUT, username)
         self.send_keys(self.PASSWORD_INPUT, password)
         self.click(self.LOGIN_BTN)
