@@ -213,6 +213,9 @@ jobs:
 
           // OpenCart
           define('OPENCART_SERVER', 'http://localhost:8080/');
+          // 以下常量供 admin 代码使用（例如 language.php 中的 HTTP_CATALOG）
+          define('HTTP_CATALOG', 'http://localhost:8080/');
+          define('HTTPS_CATALOG', 'http://localhost:8080/');
           PHPEOF
 
           # 创建 admin/config.php（指向根 config.php）
@@ -502,6 +505,9 @@ jobs:
           define('DB_DATABASE', 'opencart');
           define('DB_PREFIX',   'oc_');
           define('OPENCART_SERVER', 'http://localhost:8080/');
+          // 以下常量供 admin 代码使用（例如 language.php 中的 HTTP_CATALOG）
+          define('HTTP_CATALOG', 'http://localhost:8080/');
+          define('HTTPS_CATALOG', 'http://localhost:8080/');
           PHPEOF
 
           # 创建 admin/config.php（指向根 config.php）

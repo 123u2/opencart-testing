@@ -316,34 +316,54 @@ class CheckoutPage(BasePage):
         """填充游客结账注册表单（OpenCart 4.0.2.3 游客模式核心）
 
         OpenCart 4.0.2.3 的游客结账流程：
-        账单地址字段直接嵌入在 #form-register 中，与账户信息一并提交。
-        字段 name 使用 payment_ 前缀（payment_address_1 / payment_city 等），
-        ID 与注册用户的独立账单 address section 相同（input-payment-address-1 等）。
+        1. 账户信息字段总是存在于 #form-register 中
+        2. 地址字段行为取决于 config_checkout_payment_address 设置：
+           - 启用时：支付地址字段（#input-payment-*）已渲染，发运地址通过 checkbox 隐藏
+           - 禁用时：不显示支付地址字段，改为显示发运地址字段（#input-shipping-*）
         """
-        # 账户信息
+        # 账户信息（总是在注册表单中）
         self.send_keys(self.REGISTER_FIRSTNAME, first_name)
         self.send_keys(self.REGISTER_LASTNAME, last_name)
         self.send_keys(self.REGISTER_EMAIL, email)
         if telephone:
             self.send_keys(self.REGISTER_TELEPHONE, telephone)
 
-        # 账单地址（name="payment_xxx"，ID 与独立账单 form 共用）
-        self.send_keys(self.BILLING_ADDRESS1, address)
-        self.send_keys(self.BILLING_CITY, city)
-        self.send_keys(self.BILLING_POSTCODE, postcode)
-
-        # 选择国家/地区（游客无默认地址，需手动选择）
-        # 按 index 1 选择第一个有效选项（跳过 "--- Please Select ---"）
-        self._select_option(self.BILLING_COUNTRY, "")
-        # 等待 AJAX 加载该国家的 zone 列表后选择第一个有效选项
+        # 根据 config_checkout_payment_address 设置选择支付地址或发运地址字段
         try:
-            self.wait.until(
-                lambda d: len(Select(d.find_element(*self.BILLING_ZONE)).options) > 1,
-                "账单地址 Zone 选项未在 AJAX 加载后出现"
-            )
-        except TimeoutException:
-            pass
-        self._select_option(self.BILLING_ZONE, "")
+            # 快速检查：支付地址字段是否存在？（缺省超时 2 秒，避免长时间等待不存在的元素）
+            self.driver.find_element(*self.BILLING_ADDRESS1)
+            use_payment = True
+        except NoSuchElementException:
+            use_payment = False
+
+        if use_payment:
+            # 支付地址已启用 → 填写支付地址字段
+            self.send_keys(self.BILLING_ADDRESS1, address)
+            self.send_keys(self.BILLING_CITY, city)
+            self.send_keys(self.BILLING_POSTCODE, postcode)
+            self._select_option(self.BILLING_COUNTRY, "")
+            try:
+                self.wait.until(
+                    lambda d: len(Select(d.find_element(*self.BILLING_ZONE)).options) > 1,
+                    "账单地址 Zone 选项未在 AJAX 加载后出现"
+                )
+            except TimeoutException:
+                pass
+            self._select_option(self.BILLING_ZONE, "")
+        else:
+            # 支付地址已禁用 → 填写可见的发运地址字段
+            self.send_keys(self.DELIVERY_ADDRESS1, address)
+            self.send_keys(self.DELIVERY_CITY, city)
+            self.send_keys(self.DELIVERY_POSTCODE, postcode)
+            self._select_option(self.DELIVERY_COUNTRY, "")
+            try:
+                self.wait.until(
+                    lambda d: len(Select(d.find_element(*self.DELIVERY_ZONE)).options) > 1,
+                    "发运地址 Zone 选项未在 AJAX 加载后出现"
+                )
+            except TimeoutException:
+                pass
+            self._select_option(self.DELIVERY_ZONE, "")
 
         return self
 
