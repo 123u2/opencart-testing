@@ -46,12 +46,37 @@ class AdminLoginPage(BasePage):
 
         OpenCart 4.0.2.3 登录表单使用 data-oc-toggle="ajax"，
         提交后由 JavaScript 处理登录逻辑。
+        成功后 JS 执行 location=json['redirect'] 跳转至 Dashboard。
         """
         # 确认登录表单已渲染（而非 PHP 错误页）
         self._wait_for_login_form(timeout=20)
         self.send_keys(self.USERNAME_INPUT, username)
         self.send_keys(self.PASSWORD_INPUT, password)
         self.click(self.LOGIN_BTN)
+
+        # 等待 AJAX 登录完成：成功则重定向到 dashboard，失败则显示错误提示
+        try:
+            self.wait_for_url_contains("dashboard", timeout=15)
+        except TimeoutException:
+            # 检查是否显示了登录错误
+            error = self.get_error_message()
+            if error:
+                logger.error(f"管理员登录失败: {error}")
+                raise Exception(f"管理员登录失败: {error}")
+            # 无错误信息但也没跳转 — 可能是 JS 未执行，记录当前 URL
+            logger.error(f"管理员登录后未跳转到 Dashboard，当前 URL: {self.get_current_url()}")
+            # 尝试 JS 直接提交表单作为兜底
+            try:
+                self.driver.execute_script(
+                    "document.getElementById('form-login').submit();"
+                )
+                self.wait_for_url_contains("dashboard", timeout=10)
+            except Exception:
+                raise Exception(
+                    f"管理员登录失败，停留在: {self.get_current_url()}，"
+                    f"标题: {self.get_title()}"
+                )
+
         from .admin_page import AdminDashboardPage
         return AdminDashboardPage(self.driver, self.base_url)
 

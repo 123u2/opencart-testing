@@ -424,7 +424,10 @@ class CheckoutPage(BasePage):
     # =======================================================
 
     def _select_option(self, locator: tuple, value: str):
-        """选择下拉框选项（支持按可见文本或 value）"""
+        """选择下拉框选项（支持按可见文本或 value）
+
+        选择后显式触发 change 事件，确保无头 Chrome 中 AJAX 监听器被调用。
+        """
         try:
             element = self.find(locator)
             select = Select(element)
@@ -438,5 +441,10 @@ class CheckoutPage(BasePage):
                     # 最后尝试按 index 1（跳过默认的 "--- Please Select ---"）
                     if len(select.options) > 1:
                         select.select_by_index(1)
+            # 显式触发 change 事件（无头 Chrome 下 Selenium Select 可能不会自动触发）
+            self.driver.execute_script(
+                "arguments[0].dispatchEvent(new Event('change', {bubbles: true}));",
+                element
+            )
         except Exception:
             pass
