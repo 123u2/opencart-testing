@@ -183,8 +183,9 @@ jobs:
                    || (isset($_SERVER['REQUEST_URI']) && str_starts_with($_SERVER['REQUEST_URI'], '/admin'));
           define('APPLICATION', $is_admin ? 'Admin' : 'Catalog');
 
-          // HTTP
-          define('HTTP_SERVER', 'http://localhost:8080/');
+          // HTTP — admin 需要 /admin/ 前缀，否则 OpenCart Url::link 会生成错误的 catalog URL
+          define('HTTP_SERVER', 'http://localhost:8080/' . ($is_admin ? 'admin/' : ''));
+          define('HTTPS_SERVER', HTTP_SERVER);
 
           // DIR
           define('DIR_OPENCART', __DIR__ . '/');
@@ -482,7 +483,9 @@ jobs:
           $is_admin = (isset($_SERVER['SCRIPT_NAME']) && str_contains($_SERVER['SCRIPT_NAME'], '/admin'))
                    || (isset($_SERVER['REQUEST_URI']) && str_starts_with($_SERVER['REQUEST_URI'], '/admin'));
           define('APPLICATION', $is_admin ? 'Admin' : 'Catalog');
-          define('HTTP_SERVER', 'http://localhost:8080/');
+          // HTTP — admin 需要 /admin/ 前缀，否则 OpenCart Url::link 会生成错误的 catalog URL
+          define('HTTP_SERVER', 'http://localhost:8080/' . ($is_admin ? 'admin/' : ''));
+          define('HTTPS_SERVER', HTTP_SERVER);
           define('DIR_OPENCART', __DIR__ . '/');
           define('DIR_APPLICATION', DIR_OPENCART . ($is_admin ? 'admin/' : 'catalog/'));
           define('DIR_EXTENSION',  DIR_OPENCART . 'extension/');
