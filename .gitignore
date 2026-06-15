@@ -9,6 +9,7 @@ venv/
 reports/allure-results/
 reports/screenshots/*.png
 reports/*.html
+performance/reports/
 
 # 环境变量
 .env
